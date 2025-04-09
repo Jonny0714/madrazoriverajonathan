@@ -1,5 +1,5 @@
-create database registro_futbol;
-use registro_futbol;
+create database registro_basketball;
+use registro_basketball;
 create table posición(
 id INTEGER NOT NULL,
 descripcion CHAR(20),
@@ -10,9 +10,9 @@ id integer auto_increment,
 nombre char(30),
 apellidoPaterno char(30),
 apellidoMaterno char(30),
-goles INTEGER NOT NULL,
+edad INTEGER NOT NULL,
 posición INTEGER NOT NULL,
-playera INTEGER NOT NULL,
+altura INTEGER NOT NULL,
 peso FLOAT NOT NULL,
 nacionalidad CHAR(40),
 primary key (id),
@@ -20,8 +20,8 @@ foreign key (posición)
 references posición(id)
 );
 INSERT INTO posición values
-(1,'delantero'),
-(2,'mediocampista'),
-(3,'portero'),
-(4,'lateral'),
-(5,'central');
+(1,'base'),
+(2,'escolta'),
+(3,'alero'),
+(4,'ala-pivot'),
+(5,'pivot');

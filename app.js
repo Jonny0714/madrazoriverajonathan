@@ -1,76 +1,229 @@
 
 const express = require("express")
+const sesion = require("express-session")
+const dotenv = require("dotenv")
+const mysql = require("mysql2")
+const bodyParser = require('body-parser')
+const path = require("path")
+const jsonwebtoken = require("jsonwebtoken")
+const cookieParser = require('cookie-parser')
+const bcrypt = require('bcrypt')
 
-const mysql= require("mysql2")
-var bodyParser=require('body-parser')
-var app=express()
+var app = express()
+dotenv.config()
 
-var con=mysql.createConnection({
-    host:"localhost",
-    user:"root",
-    password:"n0m3l0",
-    database:"registro_futbol",
-    port:3306
-})
-con.connect();
-
-app.use(bodyParser.json())
-
-app.use(bodyParser.urlencoded({
-    extended:true
+app.use(sesion({
+    secret: process.env.SESSION_SECRET || 'mySecretKey',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000 
+    }
 }))
-app.use(express.static('public'))
 
+var con = mysql.createConnection({
+    host: process.env.HOST_DB,
+    user: process.env.USER_SECRET_DB,
+    password: process.env.PASSWORD_DB,
+    database: process.env.DATABASE_DB,
+    port: process.env.PORT_DB
+})
+
+con.connect((err) => {
+    if (err) {
+        console.error('Error connecting to database:', err);
+        process.exit(1);
+    }
+    console.log('Successfully connected to database');
+});
+
+con.on('error', function(err) {
+    console.error('Database error:', err);
+    if (err.code === 'PROTOCOL_CONNECTION_LOST') {
+        con = mysql.createConnection(con.config);
+    } else {
+        throw err;
+    }
+});
+
+app.use(cookieParser())
+app.use(bodyParser.json())
+app.use(bodyParser.urlencoded({ extended: true }))
+app.use(express.static(path.join(__dirname, "public")))
+app.use(express.json())
+
+
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "paginas/index.html")))
+app.get("/control",(req, res) => res.sendFile(path.join(__dirname, "paginas/control.html")))
+app.get("/registro",(req, res) => res.sendFile(path.join(__dirname, "paginas/registro.html")))
+app.get("/isesion",(req, res) => res.sendFile(path.join(__dirname, "paginas/login.html")))
+
+//******************************************************************************************************************* */
 function contieneEtiquetaHTML(texto) {
-    return /<[^>]+>/.test(texto); }
+    return /<[^>]+>/.test(texto);
+}
 function validarTexto(texto) {
     return /^[a-zA-ZÁÉÍÓÚáéíóúÑñ\s]{1,30}$/.test(texto);
 }
+function validarContraseña(password) {
+    return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,}$/.test(password);
+}
+function validarUsuario(usuario) {
+    return /^[a-zA-Z0-9]{1,30}$/.test(usuario);
+}
 
-app.post('/agregarUsuario',(req,res)=>{
-    try{
-        let { nombre, apellidop, apellidom, goles, posicion, peso, playera, nacionalidad } = req.body;
-        if (![nombre, apellidop, apellidom, goles, posicion, peso, playera, nacionalidad].every(Boolean)) {
+function detectarComandosPeligrosos(texto) {
+    if (typeof texto !== 'string') return false;
+    
+    const comandosPeligrosos = [
+        /\bdrop\b/i,
+        /\bdelete\b/i,
+        /\bupdate\b/i,
+        /\bselect\b/i,
+        /--/,
+        /;/,
+        /\bor\b/i,
+        /\bunion\b/i,
+        /\binsert\b/i,
+        /\balter\b/i,
+        /\bexec\b/i,
+        /xp_/i
+    ];
+
+    return comandosPeligrosos.some(patron => patron.test(texto.toLowerCase()));
+}
+
+//******************************************************************************************************************* */
+app.post('/agregarUsuario', async (req, res) => {
+    try {
+        let { nombre, apellidop, apellidom, edad, posicion, peso, altura, nacionalidad, usuario, password, password2 } = req.body;
+
+        if ([nombre, apellidop, apellidom, nacionalidad, usuario, password].some(detectarComandosPeligrosos)) {
+            return res.status(400).send({ message: "Detectado intento de inyección SQL" });
+        }
+
+        if (![nombre, apellidop, apellidom, edad, posicion, peso, altura, nacionalidad, usuario, password, password2].every(Boolean)) {
             return res.status(400).send({ message: "Faltan parámetros o hay datos manipulados en el registro" });
         }
-        goles = parseInt(goles);
+
+        edad = parseInt(edad);
         posicion = parseInt(posicion);
         peso = parseInt(peso);
-        playera = parseInt(playera);
+        altura = parseInt(altura);
 
-        if(contieneEtiquetaHTML(nombre)||contieneEtiquetaHTML(apellidom)||contieneEtiquetaHTML(apellidop)||contieneEtiquetaHTML(nacionalidad)
-            ||isNaN(goles)|| isNaN(posicion)||isNaN(peso)||isNaN(playera)){
-            return res.status(400).send({message:"Datos Incorrectos"});}
-        
-        if(!validarTexto(nombre)||!validarTexto(apellidom)||!validarTexto(apellidop)||!validarTexto(nacionalidad)){
-            return res.status(400).send({message:"Solo puedes ingresar texto de entre 1 y 30 caracteres"});}
-
-        con.query('INSERT INTO usuario (nombre,apellidopaterno,apellidomaterno,goles,posición,playera,peso,nacionalidad) VALUES (?,?,?,?,?,?,?,?)', 
-            [nombre,apellidop,apellidom,goles,posicion,playera,peso,nacionalidad], (err, respuesta, fields) => {
-            if (err) {
-                console.log("Error al conectar", err);
-                return res.status(500).send({message:"Error al conectar"});
-            }
-            return res.status(202).send({message:'ok',nombre:` ${nombre}`,apellidopaterno: `${apellidop}`,nacionalidad: `${nacionalidad}`});
-        }); 
-    }catch(error){
-        console.log(error)
-        return res.status(500).send({message:"Error en los campos"});
-    }
-})
-
-app.get('/obtenerUsuario',(req,res)=>{
-    con.query('SELECT * from usuario', (err, respuesta, fields) => {
-        if (err) {
-            console.log("Error al conectar", err);
-            return res.status(500).send({message:"Error al conectar"});
+        if (contieneEtiquetaHTML(nombre) || contieneEtiquetaHTML(apellidom) || contieneEtiquetaHTML(apellidop) || contieneEtiquetaHTML(nacionalidad)
+            || isNaN(edad) || isNaN(posicion) || isNaN(peso) || isNaN(altura) || contieneEtiquetaHTML(usuario) || contieneEtiquetaHTML(password) || contieneEtiquetaHTML(password2)) {
+            return res.status(400).send({ message: "No intentes adulterar la solicitud" });
         }
-        console.log(respuesta)
-        return res.status(202).send({message: 'ok',usuarios : respuesta});
-    });
 
-})
+        if (edad < 10 || edad > 100 || posicion < 1 || posicion > 5 || peso < 1 || peso > 300 || altura < 1 || altura > 300) {
+            return res.status(400).send({ message: "Datos numericos sin sentido" });
+        }
 
+        if (!validarTexto(nombre) || !validarTexto(apellidom) || !validarTexto(apellidop) || !validarTexto(nacionalidad)) {
+            return res.status(400).send({ message: "Solo puedes ingresar texto de entre 1 y 30 caracteres" });
+        }
+        if (!validarContraseña(password)) {
+            return res.status(400).send({ message: "La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número" });
+        }
+        if (password !== password2) {
+            return res.status(400).send({ message: "Las contraseñas no coinciden" });
+        }
+
+        // Hash de la contraseña
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+        const checkUser = () => {
+            return new Promise((resolve, reject) => {
+                con.query('SELECT * FROM usuario WHERE usuario = ?', [usuario], (err, respuesta) => {
+                    if (err) reject(err);
+                    resolve(respuesta);
+                });
+            });
+        };
+
+        const userExists = await checkUser();
+        if (userExists.length > 0) {
+            return res.status(400).send({ message: "El usuario ya existe" });
+        }
+
+        const insertUser = () => {
+            return new Promise((resolve, reject) => {
+                con.query('INSERT INTO usuario (usuario, nombre, apellidopaterno, apellidomaterno, edad, posición, altura, peso, nacionalidad, contraseña) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                    [usuario, nombre, apellidop, apellidom, edad, posicion, altura, peso, nacionalidad, hashedPassword],
+                    (err, respuesta) => {
+                        if (err) reject(err);
+                        resolve(respuesta);
+                    });
+            });
+        };
+
+        await insertUser();
+        const token = 'Bearer ' + jsonwebtoken.sign({ user: usuario}, process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRATION });
+
+        return res.status(202).send({ 
+            message: 'ok', 
+            nombre: ` ${nombre}`, 
+            apellidopaterno: `${apellidop}`, 
+            nacionalidad: `${nacionalidad}`,
+            redireccion: "/",
+            token: token
+        });
+
+    } catch (error) {
+        console.log(error);
+        return res.status(500).send({ message: "Error en los campos" });
+    }
+});
+//******************************************************************************************************************* */
+app.get('/obtenerUsuario', async (req, res) => {
+    try {
+        const obtenerUsuarios = () => {
+            return new Promise((resolve, reject) => {
+                con.query('SELECT id, usuario, nombre, apellidopaterno, apellidomaterno, edad, posición, altura, peso, nacionalidad FROM usuario',
+                    (err, respuesta) => {
+                        if (err) reject(err);
+                        resolve(respuesta);
+                    });
+            });
+        };
+
+        const obtenerPosicion = (idPosicion) => {
+            return new Promise((resolve, reject) => {
+                con.query('SELECT descripcion FROM posición WHERE id = ?', [idPosicion],
+                    (err, respuesta) => {
+                        if (err) reject(err);
+                        resolve(respuesta[0]?.descripcion || 'Desconocida');
+                    });
+            });
+        };
+
+        const usuarios = await obtenerUsuarios();
+
+        const posiciones = await Promise.all(
+            usuarios.map(usuario => obtenerPosicion(usuario.posición))
+        );
+
+        const usuariosConPosicion = usuarios.map((usuario, index) => ({
+            ...usuario,
+            posicionNombre: posiciones[index]
+        }));
+
+        return res.status(200).send({
+            message: 'ok',
+            usuarios: usuariosConPosicion
+        });
+
+    } catch (error) {
+        console.error('Error:', error);
+        return res.status(500).send({ message: "Error al obtener usuarios" });
+    }
+});
+//******************************************************************************************************************* */
 app.put('/obtenerUnUsuario', (req, res) => {
     let id = req.body.id;
     let solicitud = req.body.solicitud;
@@ -78,10 +231,13 @@ app.put('/obtenerUnUsuario', (req, res) => {
     if (!id || !solicitud) {
         return res.status(400).send({ message: "Faltan parámetros" });
     }
-    if (isNaN(id)||!validarTexto(solicitud)||contieneEtiquetaHTML(solicitud)) {
+    if([id,solicitud].some(detectarComandosPeligrosos)){
         return res.status(400).send({ message: "No intentes adulterar la solicitud" });
     }
-    const columnasPermitidas = ["nombre", "apellidoPaterno", "apellidoMaterno", "goles", "posición", "playera", "peso", "nacionalidad"];
+    if (isNaN(id) || !validarTexto(solicitud) || contieneEtiquetaHTML(solicitud)) {
+        return res.status(400).send({ message: "No intentes adulterar la solicitud" });
+    }
+    const columnasPermitidas = ["nombre", "apellidoPaterno", "apellidoMaterno", "edad", "posición", "altura", "peso", "nacionalidad"];
     if (!columnasPermitidas.includes(solicitud)) {
         return res.status(400).send({ message: "Parámetro no permitido" });
     }
@@ -98,7 +254,7 @@ app.put('/obtenerUnUsuario', (req, res) => {
             return res.status(404).send({ message: "Usuario no encontrado" });
         }
         if (solicitud === "posición") {
-            let idPosicion = respuesta[0].posición; 
+            let idPosicion = respuesta[0].posición;
 
             con.query(`SELECT descripcion FROM posición WHERE id = ?`, [idPosicion], (err, respuestaPosicion) => {
                 if (err) {
@@ -118,27 +274,29 @@ app.put('/obtenerUnUsuario', (req, res) => {
         }
     });
 });
-
+//******************************************************************************************************************* */
 app.put('/editarUsuario', (req, res) => {
     let { id, solicitud, cambio } = req.body;
-
+    if([id,solicitud,cambio].some(detectarComandosPeligrosos)){
+        return res.status(400).send({ message: "No intentes adulterar la solicitud" });
+    }
     if (!id || !solicitud || !cambio) {
         return res.status(400).send({ message: "Faltan parámetros" });
     }
-    if (isNaN(id)||!validarTexto(solicitud)||contieneEtiquetaHTML(solicitud)||contieneEtiquetaHTML(cambio)) {
+    if (isNaN(id) || !validarTexto(solicitud) || contieneEtiquetaHTML(solicitud) || contieneEtiquetaHTML(cambio)) {
         return res.status(400).send({ message: "No intentes adulterar la solicitud" });
     }
-    const columnasPermitidas = ["nombre", "apellidoPaterno", "apellidoMaterno", "goles", "posición", "playera", "peso", "nacionalidad"];
+    const columnasPermitidas = ["nombre", "apellidoPaterno", "apellidoMaterno", "edad", "posición", "altura", "peso", "nacionalidad"];
     if (!columnasPermitidas.includes(solicitud)) {
         return res.status(400).send({ message: "Parámetro no permitido" });
     }
 
-    if (["goles", "peso", "playera"].includes(solicitud)) {
+    if (["edad", "peso", "altura"].includes(solicitud)) {
         cambio = parseInt(cambio);
         if (isNaN(cambio)) {
             return res.status(400).send({ message: "El valor debe ser un número" });
         }
-    }else if (!validarTexto(cambio) || contieneEtiquetaHTML(cambio)) {
+    } else if (!validarTexto(cambio) || contieneEtiquetaHTML(cambio)) {
         return res.status(400).send({ message: "El valor debe ser texto sin etiquetas HTML" });
     }
     const ejecutarUpdate = (nuevoValor) => {
@@ -172,38 +330,124 @@ app.put('/editarUsuario', (req, res) => {
         });
 
     } else {
-        ejecutarUpdate(cambio); 
+        ejecutarUpdate(cambio);
     }
 });
-
-app.delete('/BorrarUnUsuario',(req,res)=>{
-    let id=req.body.id
-    if (!id||isNaN(id)) {
+//******************************************************************************************************************* */
+app.delete('/BorrarUnUsuario', (req, res) => {
+    let id = req.body.id
+    
+    if([id].some(detectarComandosPeligrosos)){
+        return res.status(400).send({ message: "No intentes adulterar la solicitud" });
+    }
+    if (!id || isNaN(id)) {
         return res.status(400).send({ message: "Faltan parámetros o el id no es un número" });
     }
-    con.query('DELETE usuario FROM usuario WHERE id =(?)',[id], (err, respuesta, fields) => {
+    con.query('DELETE usuario FROM usuario WHERE id =(?)', [id], (err, respuesta, fields) => {
         if (err) {
             console.log("Error al conectar", err);
-            return res.status(500).send({message:"Error al conectar"});
+            return res.status(500).send({ message: "Error al conectar" });
         }
         console.log(respuesta)
-        return res.status(202).send({message: 'ok',respuesta : respuesta.affectedRows});
+        return res.status(202).send({ message: 'ok', respuesta: respuesta.affectedRows });
     });
 
 })
-
-app.delete('/BorrarUsuario',(req,res)=>{
+//******************************************************************************************************************* */
+app.delete('/BorrarUsuarios', (req, res) => {
     con.query('DELETE usuario FROM usuario;', (err, respuesta, fields) => {
         if (err) {
             console.log("Error al conectar", err);
-            return res.status(500).send({message:"Error al conectar"});
+            return res.status(500).send({ message: "Error al conectar" });
         }
         console.log(respuesta)
-        return res.status(202).send({message: 'ok',respuesta : respuesta.affectedRows});
+        return res.status(202).send({ message: 'ok', respuesta: respuesta.affectedRows });
     });
 
 })
+//******************************************************************************************************************* */
+app.put('/login', async (req, res) => {
+    try {
+        let { usuario, password } = req.body;
+        
+        if([usuario,password].some(detectarComandosPeligrosos)){
+            return res.status(400).send({ message: "No intentes adulterar la solicitud" });
+        }
+        if (!usuario || !password) {
+            return res.status(400).send({ message: "Faltan parámetros" });
+        }
+        if (!validarUsuario(usuario) || contieneEtiquetaHTML(usuario) || contieneEtiquetaHTML(password)) {
+            return res.status(400).send({ message: "No intentes adulterar la solicitud" });
+        }
 
-app.listen(3000,()=>{
+        // Obtener usuario y contraseña hasheada
+        const [user] = await con.promise().query(
+            'SELECT id, contraseña FROM usuario WHERE usuario = ?', 
+            [usuario]
+        );
+
+        if (user.length === 0) {
+            return res.status(404).send({ message: "Usuario no encontrado" });
+        }
+
+        // Comparar contraseñas
+        const match = await bcrypt.compare(password, user[0].contraseña);
+        if (!match) {
+            return res.status(401).send({ message: "Contraseña incorrecta" });
+        }
+
+        const token = 'Bearer ' + jsonwebtoken.sign({ user: usuario }, process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRATION });
+
+        return res.status(200).send({ 
+            message: 'ok', 
+            respuesta: user[0].id, 
+            redireccion: "/", 
+            token: token 
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).send({ message: "Error al iniciar sesión" });
+    }
+});
+//******************************************************************************************************************* */
+app.put('/verificar-sesion', async (req, res) => {
+    try {       
+        
+        const token = req.body.usuario;
+        
+    if([token].some(detectarComandosPeligrosos)){
+        return res.status(400).send({ message: "No intentes adulterar la solicitud" });
+    }
+        console.log('Token recibido:', token);
+        if (!token || !token.startsWith('Bearer ')) {
+            return res.json({ sesionActiva: false });
+        }
+        
+        const tokenParts = token.split(' ');
+        const tokenValue = tokenParts[1];
+        try {
+            const decodificada = jsonwebtoken.verify(tokenValue, process.env.JWT_SECRET);
+            const [rows] = await con.promise().query(
+                'SELECT id FROM usuario WHERE usuario = ?', 
+                [decodificada.user]
+            );
+
+            if (rows.length === 0) {
+                return res.json({ sesionActiva: false });
+            }
+
+            return res.json({ sesionActiva: true });
+        } catch (tokenError) {
+            console.error('Error al verificar token:', tokenError);
+            return res.json({ sesionActiva: false });
+        }
+    } catch (error) {
+        console.error('Error en verificación de sesión:', error);
+        return res.json({ sesionActiva: false });
+    }
+});
+
+app.listen(3000, () => {
     console.log('Servidor escuchando en el puerto 3000')
 })
