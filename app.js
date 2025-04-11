@@ -1,4 +1,3 @@
-
 const express = require("express")
 const sesion = require("express-session")
 const dotenv = require("dotenv")
@@ -56,7 +55,7 @@ app.use(express.json())
 
 
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "paginas/index.html")))
-app.get("/control",(req, res) => res.sendFile(path.join(__dirname, "paginas/control.html")))
+app.get("/edicion",(req, res) => res.sendFile(path.join(__dirname, "paginas/edicion.html")))
 app.get("/registro",(req, res) => res.sendFile(path.join(__dirname, "paginas/registro.html")))
 app.get("/isesion",(req, res) => res.sendFile(path.join(__dirname, "paginas/login.html")))
 
@@ -98,27 +97,25 @@ function detectarComandosPeligrosos(texto) {
 //******************************************************************************************************************* */
 app.post('/agregarUsuario', async (req, res) => {
     try {
-        let { nombre, apellidop, apellidom, edad, posicion, peso, altura, nacionalidad, usuario, password, password2 } = req.body;
+        let { nombre, apellidop, apellidom, edad, posicion, nacionalidad, usuario, password, password2 } = req.body;
 
         if ([nombre, apellidop, apellidom, nacionalidad, usuario, password].some(detectarComandosPeligrosos)) {
             return res.status(400).send({ message: "Detectado intento de inyección SQL" });
         }
 
-        if (![nombre, apellidop, apellidom, edad, posicion, peso, altura, nacionalidad, usuario, password, password2].every(Boolean)) {
+        if (![nombre, apellidop, apellidom, edad, posicion, nacionalidad, usuario, password, password2].every(Boolean)) {
             return res.status(400).send({ message: "Faltan parámetros o hay datos manipulados en el registro" });
         }
 
         edad = parseInt(edad);
         posicion = parseInt(posicion);
-        peso = parseInt(peso);
-        altura = parseInt(altura);
 
         if (contieneEtiquetaHTML(nombre) || contieneEtiquetaHTML(apellidom) || contieneEtiquetaHTML(apellidop) || contieneEtiquetaHTML(nacionalidad)
-            || isNaN(edad) || isNaN(posicion) || isNaN(peso) || isNaN(altura) || contieneEtiquetaHTML(usuario) || contieneEtiquetaHTML(password) || contieneEtiquetaHTML(password2)) {
+            || isNaN(edad) || isNaN(posicion) || contieneEtiquetaHTML(usuario) || contieneEtiquetaHTML(password) || contieneEtiquetaHTML(password2)) {
             return res.status(400).send({ message: "No intentes adulterar la solicitud" });
         }
 
-        if (edad < 10 || edad > 100 || posicion < 1 || posicion > 5 || peso < 1 || peso > 300 || altura < 1 || altura > 300) {
+        if (edad < 10 || edad > 100 || posicion < 1 || posicion > 5) {
             return res.status(400).send({ message: "Datos numericos sin sentido" });
         }
 
@@ -152,8 +149,8 @@ app.post('/agregarUsuario', async (req, res) => {
 
         const insertUser = () => {
             return new Promise((resolve, reject) => {
-                con.query('INSERT INTO usuario (usuario, nombre, apellidopaterno, apellidomaterno, edad, posición, altura, peso, nacionalidad, contraseña) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                    [usuario, nombre, apellidop, apellidom, edad, posicion, altura, peso, nacionalidad, hashedPassword],
+                con.query('INSERT INTO usuario (usuario, nombre, apellidopaterno, apellidomaterno, edad, posición, nacionalidad, contraseña) VALUES (?,?,?,?,?,?,?,?)',
+                    [usuario, nombre, apellidop, apellidom, edad, posicion, nacionalidad, hashedPassword],
                     (err, respuesta) => {
                         if (err) reject(err);
                         resolve(respuesta);
@@ -184,7 +181,7 @@ app.get('/obtenerUsuario', async (req, res) => {
     try {
         const obtenerUsuarios = () => {
             return new Promise((resolve, reject) => {
-                con.query('SELECT id, usuario, nombre, apellidopaterno, apellidomaterno, edad, posición, altura, peso, nacionalidad FROM usuario',
+                con.query('SELECT id, usuario, nombre, apellidopaterno, apellidomaterno, edad, posición, nacionalidad FROM usuario',
                     (err, respuesta) => {
                         if (err) reject(err);
                         resolve(respuesta);
@@ -286,7 +283,7 @@ app.put('/editarUsuario', (req, res) => {
     if (isNaN(id) || !validarTexto(solicitud) || contieneEtiquetaHTML(solicitud) || contieneEtiquetaHTML(cambio)) {
         return res.status(400).send({ message: "No intentes adulterar la solicitud" });
     }
-    const columnasPermitidas = ["nombre", "apellidoPaterno", "apellidoMaterno", "edad", "posición", "altura", "peso", "nacionalidad"];
+    const columnasPermitidas = ["nombre", "apellidoPaterno", "apellidoMaterno", "edad", "posición", "nacionalidad"];
     if (!columnasPermitidas.includes(solicitud)) {
         return res.status(400).send({ message: "Parámetro no permitido" });
     }

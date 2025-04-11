@@ -39,14 +39,13 @@ const auth= async() => {
                 <th>Usuario</th>
                 <th>Nombre Completo</th>
                 <th>Edad</th>
-                <th>Altura</th>
-                <th>Peso</th>
                 <th>Nacionalidad</th>
                 <th>Posición</th>
             </tr>`;
 
             if (responseJson.message === "ok") {
                 console.log("Respuesta del servidor:", responseJson);
+                console.log(responseJson.usuarios);
                 responseJson.usuarios.forEach(usuario => {
                     cadena += `
                     <tr>
@@ -54,8 +53,6 @@ const auth= async() => {
                         <td>${usuario.usuario}</td>
                         <td>${usuario.nombre} ${usuario.apellidopaterno} ${usuario.apellidomaterno}</td>
                         <td>${usuario.edad}</td>
-                        <td>${usuario.altura}</td>
-                        <td>${usuario.peso}</td>
                         <td>${usuario.nacionalidad}</td>
                         <td>${usuario.posicionNombre}</td>
                     </tr>`;
